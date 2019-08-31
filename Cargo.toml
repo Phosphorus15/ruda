@@ -1,0 +1,10 @@
+[package]
+name = "Ruda"
+version = "0.1.0"
+authors = ["Phosphorus15 <steepout@qq.com>"]
+edition = "2018"
+
+[dependencies]
+llvm-sys = "38"
+pest_derive = "2.0"
+pest = "2.1.1"

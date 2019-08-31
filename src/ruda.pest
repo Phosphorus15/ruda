@@ -1,0 +1,71 @@
+number = @{ "-"{,1} ~ (ASCII_DIGIT)+ }
+
+ident = @{ (ASCII_ALPHA | "@") ~ (ASCII_ALPHANUMERIC)* }
+
+var_decls = {"var" ~ ident ~ ("," ~ ident)* }
+
+arith_ops = { "+" | "-" | "*" | "/" | "<" | "==" | ">" | ">=" | "<=" | "||" | "&&" | "^" | "|" | "&" }
+
+value = { ident | number | ident ~ "." ~ ident | string_literal }
+
+base = {func*}
+
+func = {func_decl ~ "{" ~ func_body ~ "}"}
+
+func_decl = { (parfun_decl | ("fun")) ~ ident ~  param_list ~ ret_type?}
+
+ret_type = {"->" ~ type_ident}
+
+parfun_decl = {"parfun" ~ dim_param}
+
+func_body = {(base_expr ~ ";")*}
+
+dim_param = {"<" ~ ident ~ ("," ~ ident)* ~ ">"}
+
+param_list = {"(" ~ (")" | single_param ~ ("," ~ single_param)* ~ ")") }
+
+single_param = {ident ~ ":" ~ (mut_type| immut_type)}
+
+mut_type = {"mut" ~ type_ident}
+
+immut_type = {type_ident}
+
+type_ident = {ident | arr_type}
+
+arr_type = {"[" ~ type_ident ~ "]"}
+
+base_expr = {
+    return_expr |
+    let_expr |
+    assignment |
+    value_expr
+}
+
+return_expr = {"return" ~ value_expr}
+
+let_expr = {"let" ~ mut_let? ~ ident ~ "=" ~ value_expr}
+
+mut_let = {"mut"}
+
+value_expr = { func_call | value }
+
+func_call = {ident ~ "(" ~ value_expr? ~ ("," ~ value_expr)* ~ ")"}
+
+assignable = {ident | ident ~ "[" ~ value_expr ~ "]" }
+
+assignment = { assignable ~ "=" ~ value_expr }
+
+statement = {assignment}
+
+char = {
+    !("\"" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+}
+
+string_content = @{char*}
+
+string_literal = @{ "\"" ~ string_content ~ "\"" }
+
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+
