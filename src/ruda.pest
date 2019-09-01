@@ -1,6 +1,6 @@
 number = @{ "-"{,1} ~ (ASCII_DIGIT)+ }
 
-ident = @{ (ASCII_ALPHA | "@") ~ (ASCII_ALPHANUMERIC)* }
+ident = @{ (ASCII_ALPHA | "@") ~ (ASCII_ALPHANUMERIC | "_")* }
 
 var_decls = {"var" ~ ident ~ ("," ~ ident)* }
 
@@ -41,7 +41,7 @@ base_expr = {
     value_expr
 }
 
-return_expr = {"return" ~ value_expr}
+return_expr = {"return" ~ value_expr?}
 
 let_expr = {"let" ~ mut_let? ~ ident ~ "=" ~ value_expr}
 
@@ -51,9 +51,7 @@ value_expr = { func_call | value }
 
 func_call = {ident ~ "(" ~ value_expr? ~ ("," ~ value_expr)* ~ ")"}
 
-assignable = {ident | ident ~ "[" ~ value_expr ~ "]" }
-
-assignment = { assignable ~ "=" ~ value_expr }
+assignment = { ident ~ "=" ~ value_expr }
 
 statement = {assignment}
 
@@ -69,3 +67,4 @@ string_literal = @{ "\"" ~ string_content ~ "\"" }
 
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 
+COMMENT = _{ "#" ~ (!"\n" ~ ANY)* }
