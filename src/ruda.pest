@@ -4,11 +4,13 @@ ident = @{ (ASCII_ALPHA | "@") ~ (ASCII_ALPHANUMERIC | "_")* }
 
 var_decls = {"var" ~ ident ~ ("," ~ ident)* }
 
-arith_ops = { "+" | "-" | "*" | "/" | "<" | "==" | ">" | ">=" | "<=" | "||" | "&&" | "^" | "|" | "&" }
+arith_ops = { "+" | "-" | "*" | "/" }
 
 value = { ident | number | ident ~ "." ~ ident | string_literal }
 
 base = {func*}
+
+file = _{SOI ~ base ~ EOI}
 
 func = {func_decl ~ "{" ~ func_body ~ "}"}
 
@@ -47,7 +49,9 @@ let_expr = {"let" ~ mut_let? ~ ident ~ "=" ~ value_expr}
 
 mut_let = {"mut"}
 
-value_expr = { func_call | value }
+value_expr = { bin_op | func_call | value }
+
+bin_op = {(value | func_call) ~ arith_ops ~ value_expr}
 
 func_call = {ident ~ "(" ~ value_expr? ~ ("," ~ value_expr)* ~ ")"}
 

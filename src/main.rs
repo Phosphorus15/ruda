@@ -6,6 +6,8 @@ use llvm::core::*;
 use llvm::execution_engine::*;
 use llvm::target::*;
 
+use pest::prec_climber::*;
+
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
@@ -16,12 +18,13 @@ use std::io::Read;
 use llvm::LLVMType;
 use std::ptr::{null, null_mut};
 use llvm::prelude::{LLVMContextRef, LLVMModuleRef, LLVMValueRef, LLVMBuilderRef};
-use std::ops::{Deref, DerefMut};
+use std::ops::{Deref, DerefMut, Add};
 use std::ffi::{CStr, CString};
 use std::collections::HashMap;
 use llvm::analysis::LLVMVerifyFunction;
 use llvm::analysis::LLVMVerifierFailureAction::{LLVMPrintMessageAction, LLVMAbortProcessAction};
 use std::env::args;
+use std::iter::Map;
 
 #[derive(Parser)]
 #[grammar = "ruda.pest"]
@@ -51,10 +54,12 @@ pub enum BaseExpr {
     Nope,
 }
 
+fn gen_bin_op(op: &String, lhs: BaseExpr, rhs: BaseExpr) -> BaseExpr {
+    BaseExpr::FuncCall(String::from("@").add(&op[..]), vec![lhs, rhs])
+}
+
 fn walk_pairs(pairs: pest::iterators::Pairs<Rule>) -> Vec<BaseExpr> {
-    let vec = pairs.clone().collect::<RuleList>();
-    let rules: RuleList = vec.into_iter().next().unwrap().into_inner().collect();
-    rules.into_iter().map(walk_func).collect()
+    pairs.into_iter().map(walk_func).collect()
 }
 
 macro_rules! parse_param {
@@ -146,18 +151,66 @@ fn walk_fun_body(body: RuleList) -> Vec<BaseExpr> {
 }
 
 fn walk_value_expr(body: RuleList) -> BaseExpr {
+    let mut priority = HashMap::<&str, (i32, bool)>::new();
+    priority.insert("+", (1, true));
+    priority.insert("-", (1, true));
+    priority.insert("*", (2, true));
+    priority.insert("/", (2, true));
+    walk_value_expr_with_climber(body, 0, &priority).0
+}
+
+fn walk_value_expr_with_climber<'a>(body: RuleList<'a>, prec_val: i32, priority: &HashMap<&str, (i32, bool)>) -> (BaseExpr, Option<RuleList<'a>>) {
     let primary = body[0].clone();
     match primary.as_rule() {
         Rule::value => {
-            walk_value_node(primary.into_inner().collect())
+            (walk_value_node(primary.into_inner().collect()), None)
         }
         Rule::func_call => {
             let composition = primary.into_inner().collect::<RuleList>();
             let id = composition[0].as_str().to_string();
-            BaseExpr::FuncCall(id, composition.into_iter().skip(1)
-                .map(|v| walk_value_expr(v.into_inner().collect())).collect())
+            (BaseExpr::FuncCall(id, composition.into_iter().skip(1)
+                .map(|v| walk_value_expr(v.into_inner().collect())).collect()), None)
         }
-        _ => { BaseExpr::Nope }
+        Rule::bin_op => { // prec climber
+            let composition = primary.into_inner().collect::<RuleList>();
+            let lhs = walk_value_node(composition[0].clone().into_inner().collect());
+            let mut last_op = composition[1].clone();
+            let mut op = last_op.as_str().to_string();
+            let mut prior = priority.get(&op[..]).expect("Operator not found !");
+            let mut result = lhs;
+            let mut remnants : RuleList = composition[2].clone().into_inner().collect();
+            while prior.0 >= prec_val {
+                println!("{} {} {:?}", prec_val, op, prior);
+                dbg!(&remnants);
+                let next_prior = if prior.1 { prior.0 + 1 } else { prior.0 };
+                let rhs = walk_value_expr_with_climber(remnants.clone(), next_prior, priority);
+                let suc = rhs.1;
+                result = gen_bin_op(&op, result, rhs.0);
+                match suc {
+                    None => {
+                        return (result, None)
+                    }
+                    Some(expr) => {
+                        dbg!(&expr);
+                        remnants = expr;
+                        last_op = remnants[0].clone();
+                        op = last_op.as_str().to_string();
+                        prior = priority.get(&op[..]).expect("Operator not found !");
+                        remnants = remnants[1..].to_vec();
+                    }
+                }
+            }
+            //println!("remnants :");
+            //dbg!(&remnants);
+            if remnants.len() > 0 {
+                let mut ret_vec = vec![last_op];
+                ret_vec.extend(remnants.into_iter());
+                (result, Some(ret_vec))
+            } else {
+                (result, None)
+            }
+        }
+        _ => { (BaseExpr::Nope, None) }
     }
 }
 
@@ -246,15 +299,25 @@ fn build_recurse_expr(expr: BaseExpr, context: LLVMContextRef, module: LLVMModul
     }
 }
 
+pub enum AddressSpace {
+    Generic = 0,
+    Global = 1,
+    Constant = 4,
+}
+
 fn build_intrinsics(id: String, mut params: Vec<LLVMValueRef>, context: LLVMContextRef, module: LLVMModuleRef, builder: LLVMBuilderRef) -> LLVMValueRef {
+    println!("{}", id);
     match &id[..] {
-        "@add" => unsafe { LLVMBuildAdd(builder, params[0], params[1], b"tmp\0".as_ptr() as *mut _) }
-        "@mul" => unsafe { LLVMBuildMul(builder, params[0], params[1], b"tmp\0".as_ptr() as *mut _) }
+        "@add" | "@+" => unsafe { LLVMBuildAdd(builder, params[0], params[1], b"tmp\0".as_ptr() as *mut _) }
+        "@mul" | "@*" => unsafe { LLVMBuildMul(builder, params[0], params[1], b"tmp\0".as_ptr() as *mut _) }
+        "@div" | "@/" => unsafe { LLVMBuildExactSDiv(builder, params[0], params[1], b"tmp\0".as_ptr() as *mut _) }
+        "@sub" | "@-" => unsafe { LLVMBuildSub(builder, params[0], params[1], b"tmp\0".as_ptr() as *mut _) }
         "@load" => unsafe {
             let ptr = LLVMBuildGEP(builder, params[0], &mut (params[1].clone()) as *mut _, 1, b"loadtmp\0".as_ptr() as *mut _);
             LLVMBuildLoad(builder, ptr, b"tmp\0".as_ptr() as *mut _)
         }
         "@store" => unsafe {
+            assert!(LLVMGetPointerAddressSpace(LLVMTypeOf(params[0])) != AddressSpace::Constant as u32);
             let ptr = LLVMBuildGEP(builder, params[0], &mut (params[1].clone()) as *mut _, 1, b"loadtmp\0".as_ptr() as *mut _);
             LLVMBuildStore(builder, params[2], ptr)
         }
@@ -341,17 +404,21 @@ fn init_nvptx_intrinsics(context: LLVMContextRef, module: LLVMModuleRef) -> NVIn
 }
 
 fn main() {
-    if args().len() < 2 { panic!("ruda - no input file") };
+    //if args().len() < 2 { panic!("ruda - no input file") };
+    let obj = args().last().unwrap().as_str();
     let mut str = String::new();
-    std::fs::File::open(args().last().unwrap().as_str()).unwrap().read_to_string(&mut str);
+    std::fs::File::open("src/arith.ru").unwrap().read_to_string(&mut str);
     unsafe {
 // Set up a context, module and builder in that context.
         let context = LLVMContextCreate();
         let module = LLVMModuleCreateWithNameInContext(b"canoe\0".as_ptr() as *const _, context);
         let builder = LLVMCreateBuilderInContext(context);
-        let parser = RudaParser::parse(Rule::base, &str).unwrap_or_else(|e| panic!("{}", e));
+        let parser = RudaParser::parse(Rule::file, &str)
+            .unwrap_or_else(|e| panic!("{}", e)).collect::<RuleList>()[0].clone().into_inner();
+        dbg!(&parser);
         let intrinsics = init_nvptx_intrinsics(context, module);
         for func in walk_pairs(parser) {
+            dbg!(&func);
             llvm_declare_par_func(func, context, module, builder, &intrinsics);
         }
         LLVMDisposeBuilder(builder);
