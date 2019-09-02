@@ -4,7 +4,7 @@ fun add(a: i64, b: i64) -> i64 {
 
 parfun<x> scalarAdd(arr: mut [i64], v: i64) {
     let c = @load(arr, x); # load intrinsic
-    @store(arr, x, @add(c, v));
+    @store(arr, x, c + v);
     return;
 }
 
