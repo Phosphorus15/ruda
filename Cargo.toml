@@ -1,5 +1,5 @@
 [package]
-name = "Ruda"
+name = "ruda"
 version = "0.1.0"
 authors = ["Phosphorus15 <steepout@qq.com>"]
 edition = "2018"

@@ -12,7 +12,9 @@ base = {func*}
 
 file = _{SOI ~ base ~ EOI}
 
-func = {func_decl ~ "{" ~ func_body ~ "}"}
+func = {func_decl ~ ("{" ~ func_body ~ "}" | "@{" ~ intrinsics_body ~ "}")}
+
+intrinsics_body = {(!"}" ~ ANY) *}
 
 func_decl = { (parfun_decl | ("fun")) ~ ident ~  param_list ~ ret_type?}
 
