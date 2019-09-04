@@ -1,7 +1,6 @@
 use std::iter::Extend;
 use std::collections::HashMap;
 use pest::iterators::Pair;
-use std::ops::Add;
 
 #[derive(Parser)]
 #[grammar = "ruda.pest"]
@@ -30,6 +29,8 @@ pub type TypedExpr = (BaseExpr, TyName);
 
 #[derive(Debug, Clone)]
 pub enum BaseExpr {
+    IntrinsicsFuncDecl(String, Vec<(String, TyName)>, TyName, String),
+    FuncVirtualDecl(String, Vec<(String, TyName)>, TyName),
     FuncDecl { ident: String, para_in: Vec<String>, is_par: bool, params: Vec<(String, TyName)>, ret: TyName, body: Vec<TypedExpr> },
     FuncCall(String, Vec<TypedExpr>),
     LetDecl(String, bool, Box<TypedExpr>),
@@ -43,8 +44,14 @@ pub enum BaseExpr {
 }
 
 fn gen_bin_op(op: &String, lhs: TypedExpr, rhs: TypedExpr) -> TypedExpr {
-    let name = String::from("@").add(&op[..]);
-    (BaseExpr::FuncCall(name.clone(), vec![lhs, rhs]),
+    let name = match &op[..] {
+        "+" => "add",
+        "-" => "subtract",
+        "*" => "multiply",
+        "/" => "divide",
+        _ => "nop"
+    };
+    (BaseExpr::FuncCall(name.to_string(), vec![lhs, rhs]),
      TyName::VarBind(format!("ret@{}", name)))
 }
 
@@ -60,16 +67,37 @@ return (pair[0].as_span().as_str().to_string(), walk_ty(pair[1].clone()));
 }
 }
 
+fn collect_intrinsics<'a>(ret_type: TyName, decl: RuleList<'a>, body: Pair<'a, Rule>) -> TypedExpr {
+    let name = decl[0].as_span().as_str().to_string();
+    let params: Vec<_> = parse_param!(decl[1].clone().into_inner());
+    (BaseExpr::IntrinsicsFuncDecl(name, params.clone(), ret_type.clone(), body.as_str().to_string())
+     , TyName::get_arrow(params.into_iter().map(|v| v.1).collect(), ret_type))
+}
+
+fn collect_decl(ret_type: TyName, decl: RuleList) -> TypedExpr {
+    let name = decl[0].as_span().as_str().to_string();
+    let params: Vec<_> = parse_param!(decl[1].clone().into_inner());
+    (BaseExpr::FuncVirtualDecl(name, params.clone(), ret_type.clone())
+     , TyName::get_arrow(params.into_iter().map(|v| v.1).collect(), ret_type))
+}
+
 fn walk_func(func: Pair<Rule>) -> TypedExpr {
+    dbg!(&func);
     let vec: RuleList = func.into_inner().collect();
     let decl: RuleList = vec[0].clone().into_inner().collect();
-    let body: RuleList = vec[1].clone().into_inner().collect();
-    let mut para_in: Vec<String> = vec![];
     let ret_type = if decl.last().unwrap().as_rule() == Rule::ret_type {
         walk_ty(decl.last().unwrap().clone())
     } else {
         TyName::Unit
     };
+    if vec[1].as_rule() == Rule::intrinsics_body {
+        return collect_intrinsics(ret_type, decl, vec[1].clone());
+    }
+    if vec[1].as_rule() == Rule::declare_body {
+        return collect_decl(ret_type, decl);
+    }
+    let body: RuleList = vec[1].clone().into_inner().collect();
+    let mut para_in: Vec<String> = vec![];
     if decl[0].as_rule() == Rule::parfun_decl {
         para_in = decl[0].clone().into_inner().next().unwrap().clone().into_inner().map(|i| i.as_span().as_str().to_string()).collect();
         let name = decl[1].as_span().as_str().to_string();
@@ -172,8 +200,7 @@ fn walk_value_expr_with_climber<'a>(body: RuleList<'a>, prec_val: i32, priority:
             let mut result = lhs;
             let mut remnants: RuleList = composition[2].clone().into_inner().collect();
             while prior.0 >= prec_val {
-                println!("{} {} {:?}", prec_val, op, prior);
-                dbg!(&remnants);
+                //println!("{} {} {:?}", prec_val, op, prior);
                 let next_prior = if prior.1 { prior.0 + 1 } else { prior.0 };
                 let rhs = walk_value_expr_with_climber(remnants.clone(), next_prior, priority);
                 let suc = rhs.1;
@@ -183,7 +210,6 @@ fn walk_value_expr_with_climber<'a>(body: RuleList<'a>, prec_val: i32, priority:
                         return (result, None);
                     }
                     Some(expr) => {
-                        dbg!(&expr);
                         remnants = expr;
                         last_op = remnants[0].clone();
                         op = last_op.as_str().to_string();

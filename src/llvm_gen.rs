@@ -1,5 +1,5 @@
 use crate::parser::*;
-use std::ffi::CString;
+use std::ffi::{CString, CStr};
 use std::collections::HashMap;
 
 use llvm::analysis::LLVMVerifyFunction;
@@ -18,12 +18,12 @@ Current primitives approach :
     i32 :< f32
 */
 fn subtype_check(t: &TyName, s: &TyName) -> bool {
-    println!("subtype check src: {:?} dest: {:?}", t, s);
+    //println!("subtype check src: {:?} dest: {:?}", t, s);
     if *s == *t {
         return true;
     }
     if let (TyName::NameBind(src), TyName::NameBind(dest)) = (t, s) {
-        println!("name bind comparison src: {} dest: {}", src, dest);
+        //println!("name bind comparison src: {} dest: {}", src, dest);
         if src[..].eq("i32") {
             return subtype_check(&TyName::NameBind(String::from("i64")), s)
                 || subtype_check(&TyName::NameBind(String::from("f32")), s);
@@ -46,13 +46,13 @@ fn gen_subtype_cast(src: &TyName, dest: &TyName, src_val: LLVMValueRef, context:
                 return unsafe { LLVMBuildSExtOrBitCast(builder, src_val, LLVMInt64TypeInContext(context), b"casttmp\0".as_ptr() as *mut _) };
             }
             ("i32", "f32") => {
-                return unsafe { LLVMBuildBitCast(builder, src_val, LLVMFloatTypeInContext(context), b"casttmp\0".as_ptr() as *mut _) };
+                return unsafe { LLVMBuildSIToFP(builder, src_val, LLVMFloatTypeInContext(context), b"casttmp\0".as_ptr() as *mut _) };
             }
             ("i32", "f64") => {
-                return unsafe { LLVMBuildBitCast(builder, src_val, LLVMDoubleTypeInContext(context), b"casttmp\0".as_ptr() as *mut _) };
+                return unsafe { LLVMBuildSIToFP(builder, src_val, LLVMDoubleTypeInContext(context), b"casttmp\0".as_ptr() as *mut _) };
             }
             ("i64", "f64") => {
-                return unsafe { LLVMBuildBitCast(builder, src_val, LLVMDoubleTypeInContext(context), b"casttmp\0".as_ptr() as *mut _) };
+                return unsafe { LLVMBuildSIToFP(builder, src_val, LLVMDoubleTypeInContext(context), b"casttmp\0".as_ptr() as *mut _) };
             }
             ("f32", "f64") => {
                 return unsafe { LLVMBuildFPExt(builder, src_val, LLVMDoubleTypeInContext(context), b"casttmp\0".as_ptr() as *mut _) };
@@ -96,7 +96,7 @@ fn build_recurse_expr(expr: BaseExpr, module_decl: &HashMap<String, Vec<(LLVMVal
         BaseExpr::Return(ret) => {
             let val = build_recurse_expr(ret.0, module_decl, expected_ret.clone(), context, module, builder, val_context);
             assert!(subtype_check(dbg!(&val.1), dbg!(&expected_ret)));
-            unsafe { (LLVMBuildRet(builder, val.0), val.1) }
+            unsafe { (LLVMBuildRet(builder, gen_subtype_cast(&val.1, &expected_ret, val.0, context, builder)), val.1) }
         }
         BaseExpr::RetNull => {
             unsafe { (LLVMBuildRetVoid(builder), TyName::Unit) }
@@ -123,7 +123,7 @@ fn build_recurse_expr(expr: BaseExpr, module_decl: &HashMap<String, Vec<(LLVMVal
                 let mut target_ref: LLVMValueRef = null_mut();
                 let mut ret_val = TyName::Unit;
                 for (func_ref, ty) in func_decls {
-                    println!("decl {:?}", ty);
+                    //println!("decl {:?}", ty);
                     if let TyName::Arrow(box_params, ret) = ty {
                         if let TyName::Tuple(params) = (**box_params).clone() {
                             if params.len() == resolved.len() {
@@ -161,14 +161,10 @@ pub enum AddressSpace {
     Constant = 4,
 }
 
-fn build_intrinsics(id: String, mut typed_params: Vec<(LLVMValueRef, TyName)>, _context: LLVMContextRef, _module: LLVMModuleRef, builder: LLVMBuilderRef) -> LLVMValueRef {
+fn build_intrinsics(id: String, typed_params: Vec<(LLVMValueRef, TyName)>, _context: LLVMContextRef, _module: LLVMModuleRef, builder: LLVMBuilderRef) -> LLVMValueRef {
     let mut params = typed_params.into_iter().map(|v| v.0).collect::<Vec<_>>();
-    println!("{}", id);
+    //println!("{}", id);
     match &id[..] {
-        "@add" | "@+" => unsafe { LLVMBuildAdd(builder, params[0], params[1], b"tmp\0".as_ptr() as *mut _) }
-        "@mul" | "@*" => unsafe { LLVMBuildMul(builder, params[0], params[1], b"tmp\0".as_ptr() as *mut _) }
-        "@div" | "@/" => unsafe { LLVMBuildExactSDiv(builder, params[0], params[1], b"tmp\0".as_ptr() as *mut _) }
-        "@sub" | "@-" => unsafe { LLVMBuildSub(builder, params[0], params[1], b"tmp\0".as_ptr() as *mut _) }
         "@load" => unsafe {
             let ptr = LLVMBuildGEP(builder, params[0], &mut (params[1].clone()) as *mut _, 1, b"loadtmp\0".as_ptr() as *mut _);
             LLVMBuildLoad(builder, ptr, b"tmp\0".as_ptr() as *mut _)
@@ -197,13 +193,7 @@ pub(crate) fn llvm_declare_func(decl: BaseExpr, context: LLVMContextRef, module:
         let func = unsafe { LLVMFunctionType(ret_type, param_types.deref_mut().as_mut_ptr(), param_types.len() as u32, 0) };
         let ident_str = CString::new(ident.clone());
         let func_obj = unsafe { LLVMAddFunction(module, ident_str.unwrap().as_ptr(), func) };
-        for i in 0..params.len() {
-            let param_str = CString::new(params[i].0.clone());
-            unsafe {
-                let val = LLVMGetParam(func_obj, i as u32);
-                LLVMSetValueName(val, param_str.unwrap().as_ptr());
-            }
-        }
+        llvm_set_param_name(params, func_obj);
         if is_par {
             unsafe {
                 let node = LLVMMDNodeInContext(context,
@@ -214,8 +204,69 @@ pub(crate) fn llvm_declare_func(decl: BaseExpr, context: LLVMContextRef, module:
         }
         return (func_obj, ident);
     } else {
-        panic!("Unable to resolve function")
+        if let BaseExpr::IntrinsicsFuncDecl(ident, params, ret, _body) = decl {
+            let ret_type = map_type(&ret, context, false, false);
+            let mut param_types: Vec<_> = params.iter().map(|p| map_type(&p.1, context, false, false)).collect();
+            let func = unsafe { LLVMFunctionType(ret_type, param_types.deref_mut().as_mut_ptr(), param_types.len() as u32, 0) };
+            let ident_str = CString::new(ident.clone());
+            let func_obj = unsafe { LLVMAddFunction(module, ident_str.unwrap().as_ptr(), func) };
+            llvm_set_param_name(params, func_obj);
+            return (func_obj, ident);
+        } else {
+            if let BaseExpr::FuncVirtualDecl(ident, params, ret) = decl {
+                let ret_type = map_type(&ret, context, false, false);
+                let mut param_types: Vec<_> = params.iter().map(|p| map_type(&p.1, context, false, false)).collect();
+                let func = unsafe { LLVMFunctionType(ret_type, param_types.deref_mut().as_mut_ptr(), param_types.len() as u32, 0) };
+                let ident_str = CString::new(ident.clone());
+                let func_obj = unsafe { LLVMAddFunction(module, ident_str.unwrap().as_ptr(), func) };
+                llvm_set_param_name(params, func_obj);
+                return (func_obj, ident);
+            }
+            panic!("Unable to resolve function")
+        }
     }
+}
+
+fn llvm_set_param_name(params: Vec<(String, TyName)>, func_obj: LLVMValueRef) {
+    for i in 0..params.len() {
+        let param_str = CString::new(params[i].0.clone());
+        unsafe {
+            let val = LLVMGetParam(func_obj, i as u32);
+            LLVMSetValueName(val, param_str.unwrap().as_ptr());
+        }
+    }
+}
+
+pub(crate) fn llvm_embedded_ir(ident: String, params: Vec<(String, TyName)>, ret_type: TyName, body: String, context: LLVMContextRef) -> String {
+    let params_str = params.into_iter().map(|param| {
+        let type_name = unsafe {
+            CStr::from_ptr(LLVMPrintTypeToString(
+                map_type(&param.1, context, false, false))).to_owned().into_string().unwrap()
+        };
+        String::from(format!("{} %{}", type_name, param.0))
+    }).collect::<Vec<String>>().join(", ");
+    let ret_type_str = unsafe {
+        CStr::from_ptr(LLVMPrintTypeToString(
+            map_type(&ret_type, context, false, false))).to_owned().into_string().unwrap()
+    };
+    String::from(format!("define {} @{}({}) {{\n{}\n}}", ret_type_str, ident, params_str, body))
+
+}
+
+pub(crate) fn llvm_embedded_kernel_decl(ident: String, params: Vec<(String, TyName)>, ret_type: TyName, context: LLVMContextRef) -> String {
+    let params_str = params.into_iter().map(|param| {
+        let type_name = unsafe {
+            CStr::from_ptr(LLVMPrintTypeToString(
+                map_type(&param.1, context, false, false))).to_owned().into_string().unwrap()
+        };
+        String::from(format!("{} %{}", type_name, param.0))
+    }).collect::<Vec<String>>().join(", ");
+    let ret_type_str = unsafe {
+        CStr::from_ptr(LLVMPrintTypeToString(
+            map_type(&ret_type, context, false, false))).to_owned().into_string().unwrap()
+    };
+    String::from(format!("declare {} @{}({})\n\n", ret_type_str, ident, params_str))
+
 }
 
 pub(crate) fn llvm_define_func(decl: TypedExpr, func_ref: LLVMValueRef, module_decl: &HashMap<String, Vec<(LLVMValueRef, TyName)>>, context: LLVMContextRef, module: LLVMModuleRef, builder: LLVMBuilderRef, nv: &NVIntrinsics) -> LLVMValueRef {

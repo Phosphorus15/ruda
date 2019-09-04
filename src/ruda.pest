@@ -1,6 +1,6 @@
 number = @{ "-"{,1} ~ (ASCII_DIGIT)+ }
 
-ident = @{ (ASCII_ALPHA | "@") ~ (ASCII_ALPHANUMERIC | "_")* }
+ident = @{ (ASCII_ALPHA | "@") ~ (ASCII_ALPHANUMERIC | "_" | ".")* }
 
 var_decls = {"var" ~ ident ~ ("," ~ ident)* }
 
@@ -12,9 +12,11 @@ base = {func*}
 
 file = _{SOI ~ base ~ EOI}
 
-func = {func_decl ~ ("{" ~ func_body ~ "}" | "@{" ~ intrinsics_body ~ "}")}
+func = {func_decl ~ ("{" ~ func_body ~ "}" | "@{" ~ intrinsics_body ~ "}"| declare_body)}
 
 intrinsics_body = {(!"}" ~ ANY) *}
+
+declare_body = {";"}
 
 func_decl = { (parfun_decl | ("fun")) ~ ident ~  param_list ~ ret_type?}
 
