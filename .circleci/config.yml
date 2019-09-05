@@ -3,14 +3,20 @@ jobs:
   build:
     working_directory: ~/code
     docker:
-      - image: circleci/rust
+      - image: nwtgck/llvm:3.8.0
     steps:
       - checkout
       - run:
-        command: cargo check
+          command: sudo apt-get update; echo y | sudo apt install curl
       - run:
-        command: cargo test
+          command: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > install.sh; sh install.sh -y;
       - run:
-        command: cargo build
+          command: echo 'export PATH=$HOME/.cargo/bin:$PATH' >> $BASH_ENV; echo 'export LLVM_SYS_38_PREFIX=/usr/local/llvm/llvm-3.8.0/' >> $BASH_ENV
       - run:
-        command: cargo build --release
+          command: cargo check
+      - run:
+          command: cargo test
+      - run:
+          command: cargo build
+      - run:
+          command: cargo build --release
