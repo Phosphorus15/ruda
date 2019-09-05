@@ -6,7 +6,11 @@ jobs:
       - image: circleci/rust
     steps:
       - checkout
-      - cargo check
-      - cargo test
-      - cargo build
-      - cargo build --release
+      - run:
+        command: cargo check
+      - run:
+        command: cargo test
+      - run:
+        command: cargo build
+      - run:
+        command: cargo build --release
