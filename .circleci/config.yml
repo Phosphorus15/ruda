@@ -1,21 +1,12 @@
-defaults: &defaults
-  docker:
-    - image: rust
-
-
 version: 2
 jobs:
-  test:
-    <<: *defaults
+  build:
+    working_directory: ~/code
+    docker:
+      - image: circleci/rust
     steps:
       - checkout
       - cargo check
       - cargo test
       - cargo build
       - cargo build --release
-
-workflows:
-  version: 2
-  test:
-    jobs:
-      - test
