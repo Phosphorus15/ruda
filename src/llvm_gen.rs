@@ -18,12 +18,12 @@ Current primitives approach :
     i32 :< f32
 */
 fn subtype_check(t: &TyName, s: &TyName) -> bool {
-    //println!("subtype check src: {:?} dest: {:?}", t, s);
+    println!("subtype check src: {:?} dest: {:?}", t, s);
     if *s == *t {
         return true;
     }
     if let (TyName::NameBind(src), TyName::NameBind(dest)) = (t, s) {
-        //println!("name bind comparison src: {} dest: {}", src, dest);
+        println!("name bind comparison src: {} dest: {}", src, dest);
         if src[..].eq("i32") {
             return subtype_check(&TyName::NameBind(String::from("i64")), s)
                 || subtype_check(&TyName::NameBind(String::from("f32")), s);
@@ -80,12 +80,37 @@ fn map_type(ty: &TyName, context: LLVMContextRef, set_mut: bool, device_side: bo
         }
         TyName::Array(ty) => {
 // set to constant address space if necessary
-            unsafe { LLVMPointerType(map_type(&**ty, context, set_mut, device_side), if device_side { if set_mut { 1 } else { 4 } } else { 0 }) }
+            unsafe { LLVMPointerType(map_type(&**ty, context, false, device_side), if device_side { if set_mut { 1 } else { 4 } } else { 0 }) }
         }
         TyName::MutBind(ty) => {
             map_type(&**ty, context, true, device_side)
         }
         _ => unsafe { LLVMVoidTypeInContext(context) }
+    }
+}
+
+use llvm_sys::prelude::*;
+use llvm_sys::LLVMTypeKind;
+
+fn reverse_type(ty: LLVMTypeRef, context: LLVMContextRef) -> TyName {
+    match unsafe { LLVMGetTypeKind(ty) } {
+        LLVMTypeKind::LLVMPointerTypeKind => {
+            return TyName::Array(Box::new(reverse_type(unsafe { LLVMGetElementType(ty) }, context)))
+        }
+        LLVMTypeKind::LLVMFloatTypeKind => {
+            return TyName::NameBind(String::from("f32"));
+        }
+        LLVMTypeKind::LLVMDoubleTypeKind => {
+            return TyName::NameBind(String::from("f64"));
+        }
+        LLVMTypeKind::LLVMIntegerTypeKind => {
+            match unsafe { LLVMGetIntTypeWidth(ty) } {
+                32 => TyName::NameBind(String::from("i32")),
+                64 => TyName::NameBind(String::from("i64")),
+                _ => TyName::Unit
+            }
+        }
+        _ => { TyName::Unit }
     }
 }
 
@@ -115,7 +140,7 @@ fn build_recurse_expr(expr: BaseExpr, module_decl: &HashMap<String, Vec<(LLVMVal
             let mut resolved: Vec<_> = params.into_iter()
                 .map(|v| build_recurse_expr(v.0, module_decl, expected_ret.clone(), context, module, builder, val_context)).collect();
             if ident.starts_with("@") {
-                (build_intrinsics(ident, resolved, context, module, builder), TyName::NameBind(String::from("i64")))
+                build_intrinsics(ident, resolved, context, module, builder)
             } else {
                 let empty = vec![];
                 let func_decls = module_decl.get(&ident[..]).unwrap_or(&empty);
@@ -123,7 +148,7 @@ fn build_recurse_expr(expr: BaseExpr, module_decl: &HashMap<String, Vec<(LLVMVal
                 let mut target_ref: LLVMValueRef = null_mut();
                 let mut ret_val = TyName::Unit;
                 for (func_ref, ty) in func_decls {
-                    //println!("decl {:?}", ty);
+                    println!("decl {:?}", ty);
                     if let TyName::Arrow(box_params, ret) = ty {
                         if let TyName::Tuple(params) = (**box_params).clone() {
                             if params.len() == resolved.len() {
@@ -141,6 +166,7 @@ fn build_recurse_expr(expr: BaseExpr, module_decl: &HashMap<String, Vec<(LLVMVal
                         }
                     }
                 }
+                println!("trying to fecth {}", ident);
                 assert!(!target_ref.is_null());
                 unsafe {
                     let param_len = resolved.len();
@@ -161,20 +187,22 @@ pub enum AddressSpace {
     Constant = 4,
 }
 
-fn build_intrinsics(id: String, typed_params: Vec<(LLVMValueRef, TyName)>, _context: LLVMContextRef, _module: LLVMModuleRef, builder: LLVMBuilderRef) -> LLVMValueRef {
+fn build_intrinsics(id: String, typed_params: Vec<(LLVMValueRef, TyName)>, _context: LLVMContextRef, _module: LLVMModuleRef, builder: LLVMBuilderRef) -> (LLVMValueRef, TyName) {
     let mut params = typed_params.into_iter().map(|v| v.0).collect::<Vec<_>>();
     //println!("{}", id);
     match &id[..] {
         "@load" => unsafe {
             let ptr = LLVMBuildGEP(builder, params[0], &mut (params[1].clone()) as *mut _, 1, b"loadtmp\0".as_ptr() as *mut _);
-            LLVMBuildLoad(builder, ptr, b"tmp\0".as_ptr() as *mut _)
+            let load_val = LLVMBuildLoad(builder, ptr, b"tmp\0".as_ptr() as *mut _);
+            let val_type = LLVMTypeOf(load_val);
+            (load_val, dbg!(reverse_type(val_type, _context)))
         }
         "@store" => unsafe {
             assert!(LLVMGetPointerAddressSpace(LLVMTypeOf(params[0])) != AddressSpace::Constant as u32);
             let ptr = LLVMBuildGEP(builder, params[0], &mut (params[1].clone()) as *mut _, 1, b"loadtmp\0".as_ptr() as *mut _);
-            LLVMBuildStore(builder, params[2], ptr)
+            (LLVMBuildStore(builder, params[2], ptr), TyName::Unit)
         }
-        _ => null_mut()
+        _ => (null_mut(), TyName::Unit)
     }
 }
 
@@ -250,7 +278,6 @@ pub(crate) fn llvm_embedded_ir(ident: String, params: Vec<(String, TyName)>, ret
             map_type(&ret_type, context, false, false))).to_owned().into_string().unwrap()
     };
     String::from(format!("define {} @{}({}) {{\n{}\n}}", ret_type_str, ident, params_str, body))
-
 }
 
 pub(crate) fn llvm_embedded_kernel_decl(ident: String, params: Vec<(String, TyName)>, ret_type: TyName, context: LLVMContextRef) -> String {
@@ -266,7 +293,6 @@ pub(crate) fn llvm_embedded_kernel_decl(ident: String, params: Vec<(String, TyNa
             map_type(&ret_type, context, false, false))).to_owned().into_string().unwrap()
     };
     String::from(format!("declare {} @{}({})\n\n", ret_type_str, ident, params_str))
-
 }
 
 pub(crate) fn llvm_define_func(decl: TypedExpr, func_ref: LLVMValueRef, module_decl: &HashMap<String, Vec<(LLVMValueRef, TyName)>>, context: LLVMContextRef, module: LLVMModuleRef, builder: LLVMBuilderRef, nv: &NVIntrinsics) -> LLVMValueRef {

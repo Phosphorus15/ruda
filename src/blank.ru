@@ -1,5 +1,5 @@
 fun add(a: i64, b: i64) -> i64 {
-    return @add(a, b);
+    return a + b;
 }
 
 parfun<x> scalarAdd(arr: mut [i64], v: i64) {

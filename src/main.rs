@@ -31,9 +31,13 @@ use llvm::transforms::ipo::LLVMAddFunctionInliningPass;
 fn main() {
     //if args().len() < 2 { panic!("ruda - no input file") };
     //let obj = args().last().unwrap().as_str();
-    let mut str = String::new();
     let mut internal_module = String::from("; ModuleID = 'canoe_kernel'\n\n");
-    std::fs::File::open("src/arith.ru").unwrap().read_to_string(&mut str).unwrap();
+    let mut file_list = vec!["src/arith.ru", "example.ru"];
+    let file_strs = file_list.iter().map(|file| {
+        let mut str = String::new();
+        std::fs::File::open(*file).unwrap().read_to_string(&mut str).unwrap();
+        str
+    }).collect::<Vec<_>>();
     unsafe {
 // Set up a context, module and builder in that context.
         let context = LLVMContextCreate();
@@ -48,13 +52,15 @@ fn main() {
         LLVMAddReassociatePass(manager);
         LLVMInitializeFunctionPassManager(manager);
         LLVMAddFunctionInliningPass(global_manager);
-        let parser = RudaParser::parse(Rule::file, &str)
-            .unwrap_or_else(|e| panic!("{}", e)).collect::<RuleList>()[0].clone().into_inner();
+        let parsed_files = file_strs.iter().map(|str| {
+            RudaParser::parse(Rule::file, str)
+                .unwrap_or_else(|e| panic!("{}", e)).collect::<RuleList>()[0].clone().into_inner()
+        });
 //        dbg!(&parser);
         let mut module_vals = HashMap::<String, Vec<(LLVMValueRef, TyName)>>::new();
         let mut func_pairs: Vec<(TypedExpr, LLVMValueRef)> = vec![];
         let intrinsics = init_nvptx_intrinsics(context, module);
-        for func in walk_pairs(parser) {
+        for func in parsed_files.map(|parser| walk_pairs(parser)).flatten() {
             //dbg!(&func);
             let func_ref = llvm_declare_func(func.0.clone(), context, module, builder);
             let defs = module_vals.entry(func_ref.1).or_insert(vec![]);
@@ -85,7 +91,7 @@ fn main() {
             llvm_define_func(func_pair.0, func_pair.1, &module_vals, context, module, builder, &intrinsics);
             LLVMRunFunctionPassManager(manager, func_pair.1);
         }
-        let mut kernel_module : LLVMModuleRef = null_mut();
+        let mut kernel_module: LLVMModuleRef = null_mut();
         let str_len = internal_module.len();
         let string = CString::new(internal_module).unwrap();
         let code_buffer = LLVMCreateMemoryBufferWithMemoryRange(string.as_ptr() as *const _, str_len, b"kernel_code".as_ptr() as *const _, 0);
@@ -93,7 +99,7 @@ fn main() {
         let rt = llvm_sys::ir_reader::LLVMParseIRInContext(context, code_buffer, &mut kernel_module as *mut _, &mut ptr);
         //println!("{}", internal_module);
         if kernel_module.is_null() || rt != 0 {
-            let err= CStr::from_ptr(ptr).to_owned().into_string().unwrap();
+            let err = CStr::from_ptr(ptr).to_owned().into_string().unwrap();
             eprintln!("{}", err);
             panic!("Failed to compile kernel module, report for detailed reasons")
         }
