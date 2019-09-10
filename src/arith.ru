@@ -1,5 +1,5 @@
-# it's currently kind of hack to place the smaller type polymorphic decls. before larger types
-# this situation should be ameliorated later
+# New multi-dispatch rule make previous hack no-longer necessary
+# But we might need parametric polymorphism for refinement
 fun add(a: i64, b: i64) -> i64 @{
 entry:
     %tmp = add i64 %a, %b
@@ -10,6 +10,12 @@ fun add(a: f64, b: f64) -> f64 @{
 entry:
     %tmp = fadd double %a, %b
     ret double %tmp
+}
+
+fun add(a: f32, b: f32) -> f32 @{
+entry:
+    %tmp = fadd float %a, %b
+    ret float %tmp
 }
 
 fun subtract(a: i64, b: i64) -> i64 @{
