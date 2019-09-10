@@ -35,6 +35,8 @@ pub enum BaseExpr {
     FuncCall(String, Vec<TypedExpr>),
     LetDecl(String, bool, Box<TypedExpr>),
     Assign(String, Box<TypedExpr>),
+    IfExpr(Box<TypedExpr>, Vec<TypedExpr>, Option<Box<TypedExpr>>),
+    Else(Option<Box<TypedExpr>>, Vec<TypedExpr>, Option<Box<TypedExpr>>),
     Return(Box<TypedExpr>),
     RetNull,
     Ident(String),
@@ -158,6 +160,14 @@ fn walk_fun_body(body: RuleList) -> Vec<TypedExpr> {
                 Rule::value_expr => {
                     walk_value_expr(inner.into_inner().collect())
                 }
+                Rule::if_expr => {
+                    walk_if_cond_branch(inner.into_inner().collect())
+                }
+                Rule::while_expr => {
+                    let composition = inner.into_inner().collect::<RuleList>();
+                    dbg!(composition);
+                    (BaseExpr::Nope, TyName::Unit)
+                }
                 _ => {
                     (BaseExpr::Nope, TyName::Unit)
                 }
@@ -167,6 +177,10 @@ fn walk_fun_body(body: RuleList) -> Vec<TypedExpr> {
         }
     }
     ).collect()
+}
+
+fn walk_if_cond_branch(body: RuleList) -> TypedExpr {
+    (BaseExpr::Nope, TyName::Unit)
 }
 
 fn walk_value_expr(body: RuleList) -> TypedExpr {

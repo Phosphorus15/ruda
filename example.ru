@@ -1,4 +1,7 @@
 fun test(a: f32, b: i64) -> i32 {
+    while a > 0 {
+        return int(a);
+    };
     return int(trunc(a + b));
 }
 

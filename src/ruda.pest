@@ -4,7 +4,7 @@ ident = @{ (ASCII_ALPHA | "@") ~ (ASCII_ALPHANUMERIC | "_" | ".")* }
 
 var_decls = {"var" ~ ident ~ ("," ~ ident)* }
 
-arith_ops = { "+" | "-" | "*" | "/" }
+arith_ops = { "+" | "-" | "*" | "/" | ">" | ">=" | "<=" | "<" | "==" }
 
 value = { ident | number | ident ~ "." ~ ident | string_literal }
 
@@ -43,8 +43,26 @@ arr_type = {"[" ~ type_ident ~ "]"}
 base_expr = {
     return_expr |
     let_expr |
+    if_expr |
+    while_expr |
     assignment |
     value_expr
+}
+
+if_expr = {
+   "if" ~ value_expr ~ "{" ~ func_body ~ "}" ~ ((if_else_expr)* ~ (else_expr)?)?
+}
+
+if_else_expr = {
+    "elif" ~ value_expr ~ "{" ~ func_body ~ "}"
+}
+
+else_expr = {
+    "else" ~ "{" ~ func_body ~ "}"
+}
+
+while_expr = {
+    "while" ~ value_expr ~ "{" ~ func_body ~ "}"
 }
 
 return_expr = {"return" ~ value_expr?}

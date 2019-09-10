@@ -12,12 +12,13 @@ use std::ops::DerefMut;
 
 /*
 Current primitives approach :
-    i32 :< i64
-    f32 :< f64
-    i64 :< f64
-    i32 :< f32
+    i32 <: i64
+    f32 <: f64
+    i64 <: f64
+    i32 <: f32
 */
-fn subtype_check(t: &TyName, s: &TyName) -> bool {
+fn subtype_check(t: &TyName, s: &TyName, step: &mut u32) -> bool {
+    *step = *step + 1;
     println!("subtype check src: {:?} dest: {:?}", t, s);
     if *s == *t {
         return true;
@@ -25,14 +26,14 @@ fn subtype_check(t: &TyName, s: &TyName) -> bool {
     if let (TyName::NameBind(src), TyName::NameBind(dest)) = (t, s) {
         println!("name bind comparison src: {} dest: {}", src, dest);
         if src[..].eq("i32") {
-            return subtype_check(&TyName::NameBind(String::from("i64")), s)
-                || subtype_check(&TyName::NameBind(String::from("f32")), s);
+            return subtype_check(&TyName::NameBind(String::from("i64")), s, step)
+                || subtype_check(&TyName::NameBind(String::from("f32")), s, step);
         }
         if src[..].eq("f32") {
-            return subtype_check(&TyName::NameBind(String::from("f64")), s);
+            return subtype_check(&TyName::NameBind(String::from("f64")), s, step);
         }
         if src[..].eq("i64") {
-            return subtype_check(&TyName::NameBind(String::from("f64")), s);
+            return subtype_check(&TyName::NameBind(String::from("f64")), s, step);
         }
     }
     false
@@ -95,7 +96,7 @@ use llvm_sys::LLVMTypeKind;
 fn reverse_type(ty: LLVMTypeRef, context: LLVMContextRef) -> TyName {
     match unsafe { LLVMGetTypeKind(ty) } {
         LLVMTypeKind::LLVMPointerTypeKind => {
-            return TyName::Array(Box::new(reverse_type(unsafe { LLVMGetElementType(ty) }, context)))
+            return TyName::Array(Box::new(reverse_type(unsafe { LLVMGetElementType(ty) }, context)));
         }
         LLVMTypeKind::LLVMFloatTypeKind => {
             return TyName::NameBind(String::from("f32"));
@@ -120,7 +121,8 @@ fn build_recurse_expr(expr: BaseExpr, module_decl: &HashMap<String, Vec<(LLVMVal
         BaseExpr::ConstantInt(v) => unsafe { (LLVMConstInt(LLVMInt64TypeInContext(context), v as u64, 1), TyName::NameBind(String::from("i64"))) },
         BaseExpr::Return(ret) => {
             let val = build_recurse_expr(ret.0, module_decl, expected_ret.clone(), context, module, builder, val_context);
-            assert!(subtype_check(dbg!(&val.1), dbg!(&expected_ret)));
+            let mut step = 0;
+            assert!(subtype_check(dbg!(&val.1), dbg!(&expected_ret), &mut step));
             unsafe { (LLVMBuildRet(builder, gen_subtype_cast(&val.1, &expected_ret, val.0, context, builder)), val.1) }
         }
         BaseExpr::RetNull => {
@@ -147,7 +149,35 @@ fn build_recurse_expr(expr: BaseExpr, module_decl: &HashMap<String, Vec<(LLVMVal
                 //let cstring = CString::new(ident);
                 let mut target_ref: LLVMValueRef = null_mut();
                 let mut ret_val = TyName::Unit;
-                for (func_ref, ty) in func_decls {
+                let mut selected: Vec<(Vec<u32>, LLVMValueRef, Vec<TyName>, TyName)> = func_decls.iter().map(|(func_ref, ty)| {
+                    println!("decl {:?}", ty);
+                    if let TyName::Arrow(box_params, ret) = ty {
+                        if let TyName::Tuple(params) = (**box_params).clone() {
+                            if params.len() == resolved.len() {
+                                let checked: (Vec<bool>, Vec<u32>) = params.iter().zip(resolved.iter().map(|v| &v.1))
+                                    .map(|(t1, t2)| {
+                                        let mut steps = 0;
+                                        (dbg!(subtype_check(t2, t1, &mut steps)), steps)
+                                    }).unzip();
+                                if checked.0.iter().all(|x| *x) {
+                                    return Ok((checked.1, *func_ref, params, *ret.clone()));
+                                }
+                            }
+                        }
+                    }
+                    Err(())
+                }).filter_map(|v| v.ok()).collect();
+                selected.sort_by(|v1, v2| {
+                    v1.0.cmp(&v2.0)
+                });
+                let func = selected.into_iter().take(1).find(|v| true).unwrap();
+                target_ref = func.1;
+                for i in 0..func.2.len() {
+                    resolved[i].0 = gen_subtype_cast(&resolved[i].1.clone(), &func.2[i].clone(), resolved[i].0, context, builder);
+                    resolved[i].1 = func.2[i].clone();
+                }
+                ret_val = func.3;
+                /*for (func_ref, ty) in func_decls {
                     println!("decl {:?}", ty);
                     if let TyName::Arrow(box_params, ret) = ty {
                         if let TyName::Tuple(params) = (**box_params).clone() {
@@ -165,7 +195,7 @@ fn build_recurse_expr(expr: BaseExpr, module_decl: &HashMap<String, Vec<(LLVMVal
                             }
                         }
                     }
-                }
+                }*/
                 println!("trying to fecth {}", ident);
                 assert!(!target_ref.is_null());
                 unsafe {
