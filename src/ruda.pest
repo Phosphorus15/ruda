@@ -4,7 +4,7 @@ ident = @{ (ASCII_ALPHA | "@") ~ (ASCII_ALPHANUMERIC | "_" | ".")* }
 
 var_decls = {"var" ~ ident ~ ("," ~ ident)* }
 
-arith_ops = { "+" | "-" | "*" | "/" | ">" | ">=" | "<=" | "<" | "==" }
+arith_ops = { "+" | "-" | "*" | "/" | ">" | ">=" | "<=" | "<" | "==" | "!=" | "<=>" }
 
 value = { ident | number | ident ~ "." ~ ident | string_literal }
 

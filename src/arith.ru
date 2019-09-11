@@ -6,6 +6,12 @@ entry:
     ret i64 %tmp
 }
 
+fun add(a: i32, b: i32) -> i32 @{
+entry:
+    %tmp = add i32 %a, %b
+    ret i32 %tmp
+}
+
 fun add(a: f64, b: f64) -> f64 @{
 entry:
     %tmp = fadd double %a, %b
@@ -30,6 +36,18 @@ entry:
     ret double %tmp
 }
 
+fun subtract(a: i32, b: i32) -> i32 @{
+entry:
+    %tmp = sub i32 %a, %b
+    ret i32 %tmp
+}
+
+fun subtract(a: f32, b: f32) -> f32 @{
+entry:
+    %tmp = fsub float %a, %b
+    ret float %tmp
+}
+
 fun multiply(a: i64, b: i64) -> i64 @{
 entry:
     %tmp = mul i64 %a, %b
@@ -40,6 +58,42 @@ fun multiply(a: f64, b: f64) -> f64 @{
 entry:
     %tmp = fmul double %a, %b
     ret double %tmp
+}
+
+fun multiply(a: i32, b: i32) -> i32 @{
+entry:
+    %tmp = mul i32 %a, %b
+    ret i32 %tmp
+}
+
+fun multiply(a: f32, b: f32) -> f32 @{
+entry:
+    %tmp = fmul float %a, %b
+    ret float %tmp
+}
+
+fun divide(a: i64, b: i64) -> i64 @{
+entry:
+    %tmp = sdiv i64 %a, %b
+    ret i64 %tmp
+}
+
+fun divide(a: f64, b: f64) -> f64 @{
+entry:
+    %tmp = fdiv double %a, %b
+    ret double %tmp
+}
+
+fun divide(a: i32, b: i32) -> i32 @{
+entry:
+    %tmp = sdiv i32 %a, %b
+    ret i32 %tmp
+}
+
+fun divide(a: f32, b: f32) -> f32 @{
+entry:
+    %tmp = fdiv float %a, %b
+    ret float %tmp
 }
 
 fun int(a: f32) -> i32 @{

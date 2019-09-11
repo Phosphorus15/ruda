@@ -51,6 +51,12 @@ fn gen_bin_op(op: &String, lhs: TypedExpr, rhs: TypedExpr) -> TypedExpr {
         "-" => "subtract",
         "*" => "multiply",
         "/" => "divide",
+        "==" => "eq",
+        "!=" => "ne",
+        ">" => "gt",
+        "<" => "lt",
+        ">=" => "gt_eq",
+        "<=" => "lt_eq",
         _ => "nop"
     };
     (BaseExpr::FuncCall(name.to_string(), vec![lhs, rhs]),
@@ -185,10 +191,16 @@ fn walk_if_cond_branch(body: RuleList) -> TypedExpr {
 
 fn walk_value_expr(body: RuleList) -> TypedExpr {
     let mut priority = HashMap::<&str, (i32, bool)>::new();
-    priority.insert("+", (1, true));
-    priority.insert("-", (1, true));
-    priority.insert("*", (2, true));
-    priority.insert("/", (2, true));
+    priority.insert("<", (5, true));
+    priority.insert("<=", (5, true));
+    priority.insert("==", (5, true));
+    priority.insert(">=", (5, true));
+    priority.insert(">", (5, true));
+    priority.insert("!=", (5, true));
+    priority.insert("+", (10, true));
+    priority.insert("-", (10, true));
+    priority.insert("*", (20, true));
+    priority.insert("/", (20, true));
     walk_value_expr_with_climber(body, 0, &priority).0
 }
 

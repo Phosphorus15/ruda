@@ -71,6 +71,9 @@ fn map_type(ty: &TyName, context: LLVMContextRef, set_mut: bool, device_side: bo
         TyName::NameBind(name) => {
             unsafe {
                 match &name[..] {
+                    "bool" => LLVMInt1TypeInContext(context),
+                    "i8" => LLVMInt8TypeInContext(context),
+                    "i16" => LLVMInt16TypeInContext(context),
                     "i32" => LLVMInt32TypeInContext(context),
                     "i64" => LLVMInt64TypeInContext(context),
                     "f32" => LLVMFloatTypeInContext(context),
@@ -106,6 +109,9 @@ fn reverse_type(ty: LLVMTypeRef, context: LLVMContextRef) -> TyName {
         }
         LLVMTypeKind::LLVMIntegerTypeKind => {
             match unsafe { LLVMGetIntTypeWidth(ty) } {
+                1 => TyName::NameBind(String::from("bool")),
+                8 => TyName::NameBind(String::from("i8")),
+                16 => TyName::NameBind(String::from("i16")),
                 32 => TyName::NameBind(String::from("i32")),
                 64 => TyName::NameBind(String::from("i64")),
                 _ => TyName::Unit
@@ -149,6 +155,7 @@ fn build_recurse_expr(expr: BaseExpr, module_decl: &HashMap<String, Vec<(LLVMVal
                 //let cstring = CString::new(ident);
                 let mut target_ref: LLVMValueRef = null_mut();
                 let mut ret_val = TyName::Unit;
+                println!("trying to fecth {}", ident);
                 let mut selected: Vec<(Vec<u32>, LLVMValueRef, Vec<TyName>, TyName)> = func_decls.iter().map(|(func_ref, ty)| {
                     println!("decl {:?}", ty);
                     if let TyName::Arrow(box_params, ret) = ty {
@@ -177,26 +184,6 @@ fn build_recurse_expr(expr: BaseExpr, module_decl: &HashMap<String, Vec<(LLVMVal
                     resolved[i].1 = func.2[i].clone();
                 }
                 ret_val = func.3;
-                /*for (func_ref, ty) in func_decls {
-                    println!("decl {:?}", ty);
-                    if let TyName::Arrow(box_params, ret) = ty {
-                        if let TyName::Tuple(params) = (**box_params).clone() {
-                            if params.len() == resolved.len() {
-                                if params.iter().zip(resolved.iter().map(|v| &v.1))
-                                    .all(|(t1, t2)| dbg!(subtype_check(t2, t1))) {
-                                    target_ref = *func_ref;
-                                    ret_val = (**ret).clone();
-                                    for i in 0..params.len() {
-                                        resolved[i].0 = gen_subtype_cast(&resolved[i].1.clone(), &params[i].clone(), resolved[i].0, context, builder);
-                                        resolved[i].1 = params[i].clone();
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }*/
-                println!("trying to fecth {}", ident);
                 assert!(!target_ref.is_null());
                 unsafe {
                     let param_len = resolved.len();

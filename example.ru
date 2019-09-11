@@ -1,8 +1,10 @@
 fun test(a: f32, b: i64) -> i32 {
-    while a > 0 {
-        return int(a);
-    };
     return int(trunc(a + b));
+}
+
+fun calc(x: f32, b: i64, c: i32) -> f64 {
+    let d = x * b + 3;
+    return d - c * x / 5;
 }
 
 parfun<x> run(a: [f32], b: [i64], c: mut [i32]) {
