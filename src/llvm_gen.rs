@@ -84,7 +84,7 @@ fn map_type(ty: &TyName, context: LLVMContextRef, set_mut: bool, device_side: bo
         }
         TyName::Array(ty) => {
 // set to constant address space if necessary
-            unsafe { LLVMPointerType(map_type(&**ty, context, false, device_side), if device_side { if set_mut { 1 } else { 4 } } else { 0 }) }
+            unsafe { LLVMPointerType(map_type(&**ty, context, false, device_side), if device_side { if set_mut { 1 } else { 1 } } else { 0 }) }
         }
         TyName::MutBind(ty) => {
             map_type(&**ty, context, true, device_side)

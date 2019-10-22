@@ -1,0 +1,1 @@
+llc -march=nvptx64 a.ll

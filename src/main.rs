@@ -27,15 +27,46 @@ use llvm::linker::LLVMLinkModules2;
 use llvm::analysis::LLVMVerifyModule;
 use llvm::analysis::LLVMVerifierFailureAction::LLVMAbortProcessAction;
 use llvm::transforms::ipo::LLVMAddFunctionInliningPass;
+use docopt::*;
+use serde_derive::Deserialize;
+use std::process::exit;
+
+const USAGE: &'static str = "
+Ruda compiler
+
+Usage:
+  ruda [options] <filename>...
+
+Options:
+  -h --help     Show this screen
+  -o <file>     Place the output into <file>
+";
+
+
+#[derive(Debug, Deserialize)]
+struct Args {
+    arg_filename: Vec<String>,
+    flag_o: Option<String>,
+}
 
 fn main() {
+    let args: Args = Docopt::new(USAGE)
+        .and_then(|d| d.deserialize())
+        .unwrap_or_else(|e| e.exit());
+    do_compile(args.arg_filename, args.flag_o.unwrap_or("./a.ll".to_string()));
+}
+
+fn do_compile(files: Vec<String>, output: String) {
     //if args().len() < 2 { panic!("ruda - no input file") };
     //let obj = args().last().unwrap().as_str();
     let mut internal_module = String::from("; ModuleID = 'canoe_kernel'\n\n");
-    let mut file_list = vec!["src/arith.ru", "example.ru"];
+    let mut file_list = files;
     let file_strs = file_list.iter().map(|file| {
         let mut str = String::new();
-        std::fs::File::open(*file).unwrap().read_to_string(&mut str).unwrap();
+        std::fs::File::open(&file[..]).unwrap_or_else(|_| {
+            println!("Cannot open file : {}", file);
+            exit(1)
+        }).read_to_string(&mut str).unwrap();
         str
     }).collect::<Vec<_>>();
     unsafe {
@@ -107,6 +138,8 @@ fn main() {
         LLVMRunPassManager(global_manager, module);
         LLVMDisposeBuilder(builder);
         LLVMVerifyModule(module, LLVMAbortProcessAction, null_mut());
-        LLVMDumpModule(module);
+        let output_handle = LLVMPrintModuleToString(module);
+        let ptx = CStr::from_ptr(output_handle).to_owned().into_string().unwrap();
+        std::fs::write(output, ptx).unwrap();
     }
 }

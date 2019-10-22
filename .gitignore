@@ -1,2 +1,5 @@
 /target
 **/*.rs.bk
+a.ll
+a.ptx
+a.s
