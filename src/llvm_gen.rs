@@ -1,4 +1,5 @@
 use crate::parser::*;
+use crate::llvm_context::NVIntrinsics;
 use std::ffi::{CString, CStr};
 use std::collections::HashMap;
 
@@ -177,7 +178,7 @@ fn build_recurse_expr(expr: BaseExpr, module_decl: &HashMap<String, Vec<(LLVMVal
                 selected.sort_by(|v1, v2| {
                     v1.0.cmp(&v2.0)
                 });
-                let func = selected.into_iter().take(1).find(|v| true).unwrap();
+                let func = selected.into_iter().take(1).find(|v| true).unwrap_or_else(|| panic!("Identifier not in scope: `{}`", ident));
                 target_ref = func.1;
                 for i in 0..func.2.len() {
                     resolved[i].0 = gen_subtype_cast(&resolved[i].1.clone(), &func.2[i].clone(), resolved[i].0, context, builder);
@@ -360,23 +361,3 @@ pub(crate) fn llvm_define_func(decl: TypedExpr, func_ref: LLVMValueRef, module_d
     }
 }
 
-#[allow(dead_code)]
-pub struct NVIntrinsics {
-    thread_x: LLVMValueRef,
-    thread_y: LLVMValueRef,
-    thread_z: LLVMValueRef,
-    sync_thread: LLVMValueRef,
-}
-
-pub(crate) fn init_nvptx_intrinsics(context: LLVMContextRef, module: LLVMModuleRef) -> NVIntrinsics {
-    unsafe {
-        let type_cu_index = LLVMFunctionType(LLVMInt32TypeInContext(context), [].as_mut_ptr(), 0, 0);
-        let type_barrier = LLVMFunctionType(LLVMVoidTypeInContext(context), [].as_mut_ptr(), 0, 0);
-        NVIntrinsics {
-            thread_x: LLVMAddFunction(module, b"llvm.nvvm.read.ptx.sreg.tid.x\0".as_ptr() as *mut _, type_cu_index),
-            thread_y: LLVMAddFunction(module, b"llvm.nvvm.read.ptx.sreg.tid.y\0".as_ptr() as *mut _, type_cu_index),
-            thread_z: LLVMAddFunction(module, b"llvm.nvvm.read.ptx.sreg.tid.z\0".as_ptr() as *mut _, type_cu_index),
-            sync_thread: LLVMAddFunction(module, b"llvm.nvvm.barrier0\0".as_ptr() as *mut _, type_barrier),
-        }
-    }
-}

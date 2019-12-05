@@ -91,6 +91,9 @@ fn collect_decl(ret_type: TyName, decl: RuleList) -> TypedExpr {
 
 fn walk_func(func: Pair<Rule>) -> TypedExpr {
     dbg!(&func);
+    if func.as_rule() == Rule::import_module {
+        return (BaseExpr::Nope, TyName::Unit)
+    }
     let vec: RuleList = func.into_inner().collect();
     let decl: RuleList = vec[0].clone().into_inner().collect();
     let ret_type = if decl.last().unwrap().as_rule() == Rule::ret_type {

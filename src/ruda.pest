@@ -2,13 +2,17 @@ number = @{ "-"{,1} ~ (ASCII_DIGIT)+ }
 
 ident = @{ (ASCII_ALPHA | "@") ~ (ASCII_ALPHANUMERIC | "_" | ".")* }
 
+path_ident = @{ (ASCII_ALPHANUMERIC | "_" | "/" | "\\" | ".")* }
+
 var_decls = {"var" ~ ident ~ ("," ~ ident)* }
 
 arith_ops = { "+" | "-" | "*" | "/" | ">" | ">=" | "<=" | "<" | "==" | "!=" | "<=>" }
 
 value = { ident | number | ident ~ "." ~ ident | string_literal }
 
-base = {func*}
+base = {(import_module | func)*}
+
+import_module = {"import" ~ path_ident}
 
 file = _{SOI ~ base ~ EOI}
 
