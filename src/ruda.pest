@@ -40,7 +40,13 @@ mut_type = {"mut" ~ type_ident}
 
 immut_type = {type_ident}
 
-type_ident = {ident | arr_type}
+type_ident = {typedef | ident | arr_type}
+
+typedef = {("{" ~ records ~ "}")}
+
+records = { (record ~ ("," ~ record)*)* }
+
+record = { ident ~ ":" ~ type_ident }
 
 arr_type = {"[" ~ type_ident ~ "]"}
 
